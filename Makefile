@@ -232,16 +232,14 @@ release: build
 	@echo "SHA256（放到 Release 说明里）："
 	@shasum -a 256 $(DMG) $(ZIP) | sed 's/^/   /'
 	@echo ""
-	@echo "发给同事/同学时，把下面这段整个贴给他（他没有 install.sh，所以直接给命令）："
 	@echo ""
-	@echo "  AirWear 装一下："
+	@echo "  AirWear 安装："
 	@echo "  1) 下载 $(notdir $(ZIP))（把 GitHub Release 页面的链接贴这里）"
 	@echo "  2) 打开「终端」执行这三行："
 	@echo "     unzip -q -o ~/Downloads/$(notdir $(ZIP)) -d /Applications && \\"
 	@echo "     xattr -dr com.apple.quarantine /Applications/$(APP_NAME).app && \\"
 	@echo "     open /Applications/$(APP_NAME).app"
 	@echo ""
-	@echo "   （没有开发者证书，首次打开必须多做这一步；为什么见 docs/distribution.md）"
 
 ## notarize-setup: 把公证凭证存进钥匙串（只需一次；需 Apple ID + App 专用密码 + Team ID）
 notarize-setup:
