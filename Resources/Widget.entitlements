@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!--
+  ⚠️ 这个文件必须保持「空字典」。不要往里面加任何权限。
+
+  踩过的坑（有崩溃报告为证）：
+  一开始给扩展加了
+      com.apple.security.app-sandbox = true
+      com.apple.security.temporary-exception.files.home-relative-path.read-write = [...]
+  想让它沙箱化后仍能读到主 App 的快照。结果是——**扩展每次被 chronod 启动就当场死**：
+
+      chronod: Launching process ... bundleID: com.airwear.mac.widget  (pid 61515)
+      chronod: Error acquiring assertion: "Specified target process 61515 does not exist"
+      崩溃报告: EXC_BREAKPOINT / SIGTRAP，栈顶是 libsystem_secinit 的 _libsecinit_appsandbox
+
+  `_libsecinit_appsandbox` = App Sandbox 初始化。temporary-exception 属于**需要
+  provisioning profile 授权的受限权限**；本机只有 Apple Development 证书、没有描述文件，
+  于是沙箱应用失败，进程在 dyld 初始化阶段就被 abort（exit=133 / Trace/BPT trap: 5）。
+  症状看起来像"小组件没注册"，实际是"注册好了但一启动就死"，极具迷惑性。
+
+  所以：**扩展不沙箱**。它就能直接读 ~/Library/Application Support/AirWear/widget.json
+  （路径由 AppPaths 用真实 home 拼出来，不依赖容器）。
+  代价：想上架 App Store 的话需要换成 App Group + 真正的描述文件，那是另一条路。
+-->
+<dict>
+</dict>
+</plist>

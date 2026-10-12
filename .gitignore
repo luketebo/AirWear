@@ -1,0 +1,15 @@
+# 构建产物
+build/
+dist/
+
+# macOS
+.DS_Store
+
+# 本地临时（预览渲染、测试数据）
+.render-tmp/
+
+# 本机数据永远不该进仓库
+sessions.json
+widget.json
+widget-ran.log
+*.log

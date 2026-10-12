@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  ⚠️ 这个文件目前**不要启用**（Makefile 里 APP_SANDBOX 默认为 0）。
+
+	  它踩的是同一个坑：`com.apple.security.temporary-exception.*` 是需要
+	  provisioning profile 授权的受限权限，本机没有描述文件，启用后进程会在
+	  dyld 阶段被 _libsecinit_appsandbox abort（exit=133 / Trace/BPT trap: 5），
+	  连 main 都进不去。详见 Resources/Widget.entitlements 里的完整记录。
+
+	  更关键的是：当初"宿主 App 必须沙箱"这个判断本身就是错的——那是 4 个 App Store
+	  应用的巧合。实测证明宿主不沙箱时 chronod 照样会去启动我们的扩展。
+	  要启用这套权限，得先有带 application-groups / temporary-exception 的描述文件。
+
+	  以下为原始记录（保留供以后有描述文件时参考）：
+	  主 App 需要几项沙箱之外的能力，逐条说明：
+	  · system_profiler 读 AirPods 电量 → 走 blued 的 XPC，需要 bluetooth 权限
+	  · 数据/日志目录 → 沙箱下 FileManager 会返回容器内路径，
+	    所以代码里改用真实 home 拼绝对路径（见 AppPaths），再用定向豁免放行这两个目录
+	-->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.device.bluetooth</key>
+	<true/>
+	<key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
+	<array>
+		<string>/Library/Application Support/AirWear/</string>
+		<string>/Library/Logs/AirWear/</string>
+	</array>
+</dict>
+</plist>
