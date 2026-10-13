@@ -25,7 +25,7 @@
 
 两个刻意的取舍：
 
-- **不让小组件直接读 `sessions.json`**。统计口径必须只有一处实现，否则两边数字会飘；扩展进程能少碰外部路径就少碰。
+- **不让小组件直接查 SQLite 会话数据库**。统计口径必须只有一处实现，否则两边数字会飘；扩展进程通过快照读取展示数据。
 - **没用 App Group**。`com.apple.security.application-groups` 需要带该权限的 provisioning profile。
   改用「读主 App 写在固定路径的快照」这一更朴素的做法。
 

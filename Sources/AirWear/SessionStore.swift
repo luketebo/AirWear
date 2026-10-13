@@ -1,5 +1,8 @@
 import Darwin
 import Foundation
+import SQLite3
+
+private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 /// 一段佩戴/连接区间
 struct WearInterval: Codable, Identifiable, Equatable {
@@ -44,14 +47,7 @@ struct DailyStat: Identifiable {
     var estimatedWorn: TimeInterval { active + confirmedIdle }
 }
 
-/// 会话存储。
-///
-/// 存储策略：**单文件 + 原子重写**（`sessions.json`），而不是无限追加的 JSONL。
-/// 理由：区间数量是「状态变化次数」级别（每天几十到几百条），文件只有几百 KB，
-/// 每 30s 原子重写一次的成本可忽略，却换来「永远不存在半截记录」的崩溃安全性。
-/// 未闭合的区间把 `end` 留空 + 文件级 `heartbeat` 时间戳，进程被杀后按 heartbeat 收口。
-///
-/// 并发：监控队列写、电量队列补标记、主线程读，因此所有公开方法都过 `lock`。
+/// SQLite-backed session store. Legacy sessions.json is imported once on first launch.
 final class SessionStore {
 
     static let shared = SessionStore()
@@ -65,7 +61,8 @@ final class SessionStore {
     private let lock = NSRecursiveLock()
     private var file = StoreFile()
     private var lockFD: Int32 = -1
-    private var fileURL: URL
+    private var databaseURL: URL
+    private var database: OpaquePointer?
 
     /// 没有抢到跨进程锁时为 false：此时只读不写（避免 App 与 CLI 同时写坏数据）
     private(set) var isWritable = false
@@ -86,7 +83,7 @@ final class SessionStore {
         } catch {
             writableStatus = "数据目录不可用：\(dir.path)（\(error.localizedDescription)）"
         }
-        fileURL = dir.appendingPathComponent("sessions.json")
+        databaseURL = dir.appendingPathComponent("sessions.sqlite3")
         if acquireLock() {
             isWritable = true
             writableStatus = "可写"
@@ -95,7 +92,9 @@ final class SessionStore {
         recoverOpenInterval()
     }
 
-    var filePath: String { fileURL.path }
+    deinit { sqlite3_close(database) }
+
+    var filePath: String { databaseURL.path }
 
     // MARK: - 跨进程锁（flock：进程退出自动释放，无需 PID 陈旧判断）
 
@@ -120,17 +119,50 @@ final class SessionStore {
     // MARK: - 读写
 
     private func load() {
-        guard let data = try? Data(contentsOf: fileURL), !data.isEmpty else { return }
+        let flags = isWritable ? (SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE) : SQLITE_OPEN_READONLY
+        guard sqlite3_open_v2(databaseURL.path, &database, flags | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK else {
+            writableStatus = "无法打开 SQLite 数据库：\(sqliteError)"
+            isWritable = false
+            return
+        }
+        sqlite3_busy_timeout(database, 5_000)
+        if isWritable {
+            guard execute("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS intervals (id TEXT PRIMARY KEY, start REAL NOT NULL, end REAL, payload BLOB NOT NULL); CREATE INDEX IF NOT EXISTS intervals_start_idx ON intervals(start);") else {
+                isWritable = false
+                return
+            }
+        }
+        var statement: OpaquePointer?
+        if sqlite3_prepare_v2(database, "SELECT payload FROM intervals ORDER BY start", -1, &statement, nil) == SQLITE_OK {
+            defer { sqlite3_finalize(statement) }
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            while sqlite3_step(statement) == SQLITE_ROW {
+                guard let bytes = sqlite3_column_blob(statement, 0) else { continue }
+                let data = Data(bytes: bytes, count: Int(sqlite3_column_bytes(statement, 0)))
+                if let interval = try? decoder.decode(WearInterval.self, from: data) { file.intervals.append(interval) }
+            }
+        }
+        var heartbeat: OpaquePointer?
+        if sqlite3_prepare_v2(database, "SELECT value FROM metadata WHERE key='heartbeat'", -1, &heartbeat, nil) == SQLITE_OK {
+            if sqlite3_step(heartbeat) == SQLITE_ROW, let value = sqlite3_column_text(heartbeat, 0),
+               let timestamp = Double(String(cString: value)) {
+                file.heartbeat = Date(timeIntervalSince1970: timestamp)
+            }
+            sqlite3_finalize(heartbeat)
+        }
+        guard file.intervals.isEmpty, isWritable else { return }
+        let legacyURL = dataDirectory.appendingPathComponent("sessions.json")
+        guard let data = try? Data(contentsOf: legacyURL), !data.isEmpty else { return }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        if let decoded = try? decoder.decode(StoreFile.self, from: data) {
-            file = decoded
-        } else {
-            Log.error("sessions.json 解析失败，已备份为 sessions.json.bak 并重新开始")
-            let backup = fileURL.appendingPathExtension("bak")
-            try? FileManager.default.removeItem(at: backup)
-            try? FileManager.default.moveItem(at: fileURL, to: backup)
+        guard let legacy = try? decoder.decode(StoreFile.self, from: data) else {
+            Log.error("旧 sessions.json 无法解析，保留原文件供恢复")
+            return
         }
+        file = legacy
+        save()
+        Log.info("已将 \(legacy.intervals.count) 段历史记录迁移到 SQLite")
     }
 
     private func save() {
@@ -140,9 +172,48 @@ final class SessionStore {
         normalize()
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? encoder.encode(file) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        guard execute("BEGIN IMMEDIATE; DELETE FROM intervals;") else { return }
+        var statement: OpaquePointer?
+        let sql = "INSERT INTO intervals (id, start, end, payload) VALUES (?, ?, ?, ?)"
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
+            _ = execute("ROLLBACK;"); return
+        }
+        defer { sqlite3_finalize(statement) }
+        for interval in file.intervals {
+            guard let payload = try? encoder.encode(interval) else { _ = execute("ROLLBACK;"); return }
+            sqlite3_reset(statement)
+            sqlite3_bind_text(statement, 1, interval.id.uuidString, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_double(statement, 2, interval.start.timeIntervalSince1970)
+            if let end = interval.end { sqlite3_bind_double(statement, 3, end.timeIntervalSince1970) }
+            else { sqlite3_bind_null(statement, 3) }
+            _ = payload.withUnsafeBytes { bytes in
+                sqlite3_bind_blob(statement, 4, bytes.baseAddress, Int32(payload.count), SQLITE_TRANSIENT)
+            }
+            guard sqlite3_step(statement) == SQLITE_DONE else { _ = execute("ROLLBACK;"); return }
+        }
+        guard execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('heartbeat', '\(file.heartbeat.timeIntervalSince1970)'); COMMIT;") else {
+            _ = execute("ROLLBACK;")
+            return
+        }
+    }
+
+    private var sqliteError: String {
+        guard let database, let message = sqlite3_errmsg(database) else { return "unknown SQLite error" }
+        return String(cString: message)
+    }
+
+    @discardableResult
+    private func execute(_ sql: String) -> Bool {
+        guard let database else { return false }
+        var message: UnsafeMutablePointer<CChar>?
+        let result = sqlite3_exec(database, sql, nil, nil, &message)
+        if result != SQLITE_OK {
+            let detail = message.map { String(cString: $0) } ?? sqliteError
+            Log.error("SQLite: \(detail)")
+            if let message { sqlite3_free(message) }
+            return false
+        }
+        return true
     }
 
     /// 进程被杀后收口：未闭合区间按 heartbeat 结束
@@ -187,9 +258,6 @@ final class SessionStore {
         let cleaned = merged.filter { $0.duration() >= 3 }
         let open = file.intervals.filter { $0.end == nil }
         file.intervals = cleaned + open
-        // 只保留最近 400 天
-        let cutoff = Date().addingTimeInterval(-400 * 86_400)
-        file.intervals.removeAll { ($0.end ?? $0.start) < cutoff }
     }
 
     // MARK: - 记录
@@ -243,7 +311,7 @@ final class SessionStore {
         guard isWritable else { return }
         file.heartbeat = Date()
         guard file.intervals.contains(where: { $0.end == nil }) else { return }
-        save()
+        _ = execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('heartbeat', '\(file.heartbeat.timeIntervalSince1970)');")
     }
 
     func openInterval() -> WearInterval? {

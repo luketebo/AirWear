@@ -69,7 +69,7 @@ App 在跑时，命令行工具自动降级为只读模式，避免两个进程�
 
 ## 数据与日志的位置
 
-- `~/Library/Application Support/AirWear/sessions.json` —— 区间数据（原子重写）
+- `~/Library/Application Support/AirWear/sessions.sqlite3` —— 区间数据库（首次启动从旧 `sessions.json` 导入）
 - `~/Library/Application Support/AirWear/widget.json` —— 给小组件的扁平快照
 - `~/Library/Logs/AirWear/AirWear.log` —— 运行日志（超过 2MB 自动截断）
 

@@ -1,6 +1,26 @@
 import Foundation
+import SwiftUI
 
-/// 偏好设置：直接落 UserDefaults，没有独立设置窗口，控件都在菜单栏弹窗里。
+enum AppAppearance: String, CaseIterable, Identifiable {
+    case system, light, dark
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .system: return "跟随系统"
+        case .light: return "浅色"
+        case .dark: return "深色"
+        }
+    }
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+}
+
+/// User preferences persisted in UserDefaults.
 final class AppSettings {
     static let shared = AppSettings()
 
@@ -14,10 +34,16 @@ final class AppSettings {
             prefix + "dailyGoalMinutes": 180,
             prefix + "notificationsEnabled": true,
             prefix + "idleCountsAsWorn": false,
+            prefix + "appearance": AppAppearance.system.rawValue,
         ])
     }
 
     private init() { register() }
+
+    var appearance: AppAppearance {
+        get { AppAppearance(rawValue: defaults.string(forKey: prefix + "appearance") ?? "system") ?? .system }
+        set { defaults.set(newValue.rawValue, forKey: prefix + "appearance") }
+    }
 
     /// 只统计名字里带 AirPods 的设备（关掉则统计任意蓝牙耳机）
     var airPodsOnly: Bool {

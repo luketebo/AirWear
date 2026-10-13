@@ -57,7 +57,8 @@ make install     # 编译 → 装到 /Applications → 启动
 - **最近 7 天**柱状图（深色 = 出声，浅色 = 电量确认的静默佩戴，虚线 = 每日目标）
 - **电量**：左右耳 + 充电盒，以及当前区间的变化（如 `左 33%→29%`）
 - **今日区间明细**，✅ 表示这一段有电量佐证
-- **设置**：只统计 AirPods / 静默是否算佩戴 / 通知开关 / 久戴阈值 / 每日目标
+- **设置**：只统计 AirPods / 静默是否算佩戴 / 通知开关 / 久戴阈值 / 每日目标 / 外观模式
+- **主窗口**：查看最近一周统计、完整佩戴历史，并集中管理设置
 
 ![久戴提醒](docs/images/popover-break-reminder.png)
 
@@ -128,7 +129,7 @@ make clean
 
 ## 数据位置
 
-- `~/Library/Application Support/AirWear/sessions.json` —— 区间数据
+- `~/Library/Application Support/AirWear/sessions.sqlite3` —— SQLite 区间数据库（首次启动从旧 `sessions.json` 导入）
 - `~/Library/Logs/AirWear/AirWear.log` —— 运行日志
 
 卸载：`rm -rf /Applications/AirWear.app`，数据目录删掉即彻底清除记录。

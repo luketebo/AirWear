@@ -20,6 +20,7 @@ final class AppModel: ObservableObject {
     @Published var notificationsEnabled: Bool
     @Published var breakThresholdMinutes: Int
     @Published var dailyGoalMinutes: Int
+    @Published var appearance: AppAppearance
 
     let store: SessionStore
     private let monitor = WearMonitor()
@@ -41,6 +42,8 @@ final class AppModel: ObservableObject {
         notificationsEnabled = settings.notificationsEnabled
         breakThresholdMinutes = settings.breakThresholdMinutes
         dailyGoalMinutes = settings.dailyGoalMinutes
+        appearance = settings.appearance
+        applyAppearance(settings.appearance)
 
         guard startMonitoring else { return }
 
@@ -132,6 +135,12 @@ final class AppModel: ObservableObject {
         return "headphones"
     }
 
+    /// The menu bar item follows macOS appearance, independently of AirWear's window theme.
+    var menuBarForeground: Color {
+        let match = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua])
+        return match == .darkAqua ? .white : .black
+    }
+
     var stretchDuration: TimeInterval {
         guard let start = stretchStart else { return 0 }
         return max(0, now.timeIntervalSince(start))
@@ -174,7 +183,7 @@ final class AppModel: ObservableObject {
 
     // MARK: - 小组件数据桥
 
-    /// 把算好的结果写成扁平快照给小组件读（小组件是沙箱进程，不去碰 sessions.json）。
+    /// 把算好的结果写成扁平快照给小组件读（小组件不直接查询主 App 的 SQLite 数据库）。
     /// 文件每 5s 重写一次（几百字节，可忽略）；但 `reloadAllTimelines` 有预算，
     /// 只在内容真的变了、且距上次刷新 ≥60s 时才通知系统。
     private func publishWidgetSnapshot() {
@@ -282,6 +291,31 @@ final class AppModel: ObservableObject {
         AppSettings.shared.dailyGoalMinutes = dailyGoalMinutes
     }
 
+    func setAppearance(_ value: AppAppearance) {
+        appearance = value
+        AppSettings.shared.appearance = value
+        applyAppearance(value)
+    }
+
+    private func applyAppearance(_ value: AppAppearance) {
+        let appearance: NSAppearance?
+        switch value {
+        case .system:
+            appearance = nil
+        case .light:
+            appearance = NSAppearance(named: .aqua)
+        case .dark:
+            appearance = NSAppearance(named: .darkAqua)
+        }
+        // Keep the override scoped to the main window. Setting NSApp.appearance also
+        // changes the menu-bar extra's symbol tint, which must follow macOS instead.
+        NSApp.windows.first(where: { $0.title == "AirWear" })?.appearance = appearance
+    }
+
+    func syncMainWindowAppearance() {
+        applyAppearance(appearance)
+    }
+
     func refreshNow() { monitor.refresh(store: store) }
 
     // MARK: - 动作
@@ -308,11 +342,16 @@ final class AppModel: ObservableObject {
 
 struct PopoverView: View {
     @ObservedObject var model: AppModel
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.colorScheme) private var systemColorScheme
     /// 预览渲染（ImageRenderer）时把 Button 换成静态文本：离屏栅格化拿不到真实按钮样式
     var isPreview: Bool = false
     @State private var showSettings = false
 
     private var state: WearState { model.snapshot.state }
+    private var effectiveColorScheme: ColorScheme {
+        model.appearance.colorScheme ?? systemColorScheme
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -331,6 +370,15 @@ struct PopoverView: View {
         }
         .padding(14)
         .frame(width: 344)
+        // MenuBarExtra's native window background does not follow the content's
+        // injected color scheme, so provide a matching surface explicitly too.
+        .background {
+            (effectiveColorScheme == .dark
+                ? Color(red: 0.12, green: 0.13, blue: 0.15)
+                : Color(nsColor: .windowBackgroundColor))
+                .ignoresSafeArea()
+        }
+        .environment(\.colorScheme, effectiveColorScheme)
     }
 
     // MARK: 头部
@@ -570,34 +618,11 @@ struct PopoverView: View {
     private var settings: some View {
         DisclosureGroup(isExpanded: $showSettings) {
             VStack(alignment: .leading, spacing: 8) {
-                Toggle("只统计 AirPods（忽略其它蓝牙耳机）", isOn: Binding(
-                    get: { model.airPodsOnly },
-                    set: { model.setAirPodsOnly($0) }
-                ))
-                Toggle("把「连接但没出声」也算成佩戴", isOn: Binding(
-                    get: { model.idleCountsAsWorn },
-                    set: { model.setIdleCountsAsWorn($0) }
-                ))
-                Toggle("久戴时发系统通知", isOn: Binding(
-                    get: { model.notificationsEnabled },
-                    set: { model.setNotifications($0) }
-                ))
-                HStack {
-                    Text("久戴提醒阈值")
-                    Spacer()
-                    Stepper("\(model.breakThresholdMinutes) 分钟",
-                            value: Binding(get: { model.breakThresholdMinutes },
-                                           set: { model.setBreakThreshold($0) }),
-                            in: 15...240, step: 15)
+                SettingsControls(model: model)
+                Picker("外观", selection: Binding(get: { model.appearance }, set: { model.setAppearance($0) })) {
+                    ForEach(AppAppearance.allCases) { appearance in Text(appearance.title).tag(appearance) }
                 }
-                HStack {
-                    Text("每日目标")
-                    Spacer()
-                    Stepper("\(model.dailyGoalMinutes / 60) 小时",
-                            value: Binding(get: { model.dailyGoalMinutes },
-                                           set: { model.setDailyGoal($0) }),
-                            in: 30...720, step: 30)
-                }
+                .pickerStyle(.segmented)
             }
             .font(.system(size: 11))
             .toggleStyle(.switch)
@@ -612,12 +637,29 @@ struct PopoverView: View {
 
     private var footer: some View {
         HStack(spacing: 10) {
+            if !isPreview {
+                Button("打开主窗口", action: showMainWindow).buttonStyle(.link)
+            }
             footerItem("导出 CSV") { model.exportCSV() }
             footerItem("数据文件") { model.revealDataFile() }
             Spacer()
             footerItem("退出") { NSApplication.shared.terminate(nil) }
         }
         .font(.system(size: 11))
+    }
+
+    private func showMainWindow() {
+        openWindow(id: "main")
+        // Menu-bar-only apps are LSUIElement/accessory apps. Opening a SwiftUI Window
+        // does not reliably activate the app or bring that window above other apps.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            NSApp.activate(ignoringOtherApps: true)
+            guard let window = NSApp.windows.first(where: { $0.title == "AirWear" }) else { return }
+            let onScreen = NSScreen.screens.contains { $0.frame.intersects(window.frame) }
+            if !onScreen { window.center() }
+            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
+        }
     }
 
     @ViewBuilder

@@ -41,7 +41,7 @@ enum AppPaths {
             .appendingPathComponent("Library/Logs/AirWear", isDirectory: true)
     }
 
-    static var sessionsFile: URL { dataDirectory.appendingPathComponent("sessions.json") }
+    static var sessionsFile: URL { dataDirectory.appendingPathComponent("sessions.sqlite3") }
     static var snapshotFile: URL { dataDirectory.appendingPathComponent("widget.json") }
     static var widgetTraceFile: URL { dataDirectory.appendingPathComponent("widget-ran.log") }
     static var logFile: URL { logDirectory.appendingPathComponent("AirWear.log") }

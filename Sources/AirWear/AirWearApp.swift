@@ -21,7 +21,13 @@ struct AirWearApp: App {
         } label: {
             // 菜单栏直接显示今日佩戴时长：这是这个 App 唯一需要「一眼看到」的信息
             Label(model.menuBarTitle, systemImage: model.menuBarSymbol)
+                .foregroundStyle(model.menuBarForeground)
         }
         .menuBarExtraStyle(.window)
+
+        Window("AirWear", id: "main") {
+            MainWindowView(model: model)
+        }
+        .defaultSize(width: 780, height: 600)
     }
 }
