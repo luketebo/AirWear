@@ -67,7 +67,7 @@ else
 APP_ENTITLEMENTS :=
 endif
 
-.PHONY: all version build run stop install uninstall release dmg zip icon notarize notarize-setup verify-dmg widget-doctor dump watch today week export render render-widget widget-status log clean autostart unautostart help
+.PHONY: all version bump-patch bump-minor bump-major tag build run stop install uninstall release dmg zip icon notarize notarize-setup verify-dmg widget-doctor dump watch today week export render render-widget widget-status log clean autostart unautostart help
 
 all: build
 
@@ -78,6 +78,24 @@ icon:
 ## version: 显示将要打包的版本号
 version:
 	@echo "  $(APP_NAME) $(VERSION) (build $(BUILD))"
+
+## bump-patch: 版本号自增（修订：0.1.0 → 0.1.1）
+bump-patch:
+	@./scripts/bump-version.sh patch
+
+## bump-minor: 版本号自增（次版本：0.1.1 → 0.2.0）
+bump-minor:
+	@./scripts/bump-version.sh minor
+
+## bump-major: 版本号自增（主版本：0.2.1 → 1.0.0）
+bump-major:
+	@./scripts/bump-version.sh major
+
+## tag: 按当前版本号打 git tag（v$(VERSION)），重复打会报错
+tag:
+	@git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null 2>&1 && { echo "✗ tag v$(VERSION) 已存在；要重打先 git tag -d v$(VERSION)"; exit 1; } || true
+	@git diff --quiet HEAD 2>/dev/null || echo "  ⚠️  有未提交的改动，tag 会指向 HEAD 而不是你的工作区"
+	@git tag -a "v$(VERSION)" -m "v$(VERSION)" && echo "  ✅ 已打 tag v$(VERSION)（推送：git push --follow-tags）"
 
 ## build: 编译并组装 AirWear.app + 内嵌小组件扩展，然后由内向外签名
 build: $(BIN) $(BUNDLE)/Contents/Info.plist $(ICNS) $(WIDGET_BIN) $(WIDGET_BUNDLE)/Contents/Info.plist
