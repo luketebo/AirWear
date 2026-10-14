@@ -336,6 +336,52 @@ final class SessionStore {
             .sorted { $0.start < $1.start }
     }
 
+    /// Intervals that overlap a calendar period (end is exclusive).
+    func intervals(from start: Date, to end: Date, now: Date = Date()) -> [WearInterval] {
+        lock.lock(); defer { lock.unlock() }
+        return file.intervals
+            .filter { $0.start < end && ($0.end ?? now) > start }
+            .sorted { $0.start > $1.start }
+    }
+
+    /// Aggregate a period in one pass, splitting intervals at local midnight.
+    func dailyStats(from start: Date, to end: Date, now: Date = Date()) -> [DailyStat] {
+        lock.lock(); defer { lock.unlock() }
+        guard start < end else { return [] }
+        let calendar = Calendar.current
+        var days: [DailyStat] = []
+        var dayIndex: [Date: Int] = [:]
+        var day = calendar.startOfDay(for: start)
+        while day < end {
+            dayIndex[day] = days.count
+            days.append(DailyStat(day: day))
+            guard let next = calendar.date(byAdding: .day, value: 1, to: day), next > day else { break }
+            day = next
+        }
+
+        let countIdle = AppSettings.shared.idleCountsAsWorn
+        for interval in file.intervals {
+            let intervalEnd = min(interval.end ?? now, end)
+            var cursor = max(interval.start, start)
+            guard cursor < intervalEnd else { continue }
+            while cursor < intervalEnd {
+                let dayStart = calendar.startOfDay(for: cursor)
+                guard let nextDay = calendar.date(byAdding: .day, value: 1, to: dayStart),
+                      let index = dayIndex[dayStart] else { break }
+                let sliceEnd = min(intervalEnd, nextDay)
+                let span = sliceEnd.timeIntervalSince(cursor)
+                days[index].connected += span
+                if interval.isActive {
+                    days[index].active += span
+                } else if interval.wornConfirmed || countIdle {
+                    days[index].confirmedIdle += span
+                }
+                cursor = sliceEnd
+            }
+        }
+        return days
+    }
+
     private func overlap(_ interval: WearInterval, dayStart: Date, dayEnd: Date, now: Date) -> TimeInterval {
         let s = max(interval.start, dayStart)
         let e = min(interval.end ?? now, dayEnd)
