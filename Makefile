@@ -22,6 +22,8 @@ CLI_WIDGET_BUNDLE := $(shell test -d $(INSTALLED_WIDGET) && echo $(INSTALLED_WID
 # 分发用
 DIST_DIR   := dist
 VERSION    := $(shell plutil -extract CFBundleShortVersionString raw Resources/Info.plist 2>/dev/null || echo 0.0.0)
+# 构建号自动 = git 提交数：不用手改，且单调递增（Apple 要求每次提交递增）
+BUILD      := $(shell git rev-list --count HEAD 2>/dev/null || echo 0)
 DMG        := $(DIST_DIR)/$(APP_NAME)-$(VERSION).dmg
 DMG_STAGE  := $(DIST_DIR)/.stage
 ZIP        := $(DIST_DIR)/$(APP_NAME)-$(VERSION).zip
@@ -65,13 +67,17 @@ else
 APP_ENTITLEMENTS :=
 endif
 
-.PHONY: all build run stop install uninstall release dmg zip icon notarize notarize-setup verify-dmg widget-doctor dump watch today week export render render-widget widget-status log clean autostart unautostart help
+.PHONY: all version build run stop install uninstall release dmg zip icon notarize notarize-setup verify-dmg widget-doctor dump watch today week export render render-widget widget-status log clean autostart unautostart help
 
 all: build
 
 ## icon: 重新生成 App 图标（改 scripts/make-icon.py 的参数后运行；需 pip install pillow numpy）
 icon:
 	@$(PYTHON) scripts/make-icon.py $(if $(GLYPH),--glyph $(GLYPH),)
+
+## version: 显示将要打包的版本号
+version:
+	@echo "  $(APP_NAME) $(VERSION) (build $(BUILD))"
 
 ## build: 编译并组装 AirWear.app + 内嵌小组件扩展，然后由内向外签名
 build: $(BIN) $(BUNDLE)/Contents/Info.plist $(ICNS) $(WIDGET_BIN) $(WIDGET_BUNDLE)/Contents/Info.plist
@@ -92,16 +98,20 @@ $(WIDGET_BIN): $(WIDGET_SRC)
 
 $(BUNDLE)/Contents/Info.plist: Resources/Info.plist
 	@mkdir -p $(BUNDLE)/Contents
-	@cp Resources/Info.plist $@
+	@cp $< $@
+	@plutil -replace CFBundleVersion -string "$(BUILD)" $@
 
 # 图标：.icns 已入库，普通构建不需要 Python/Pillow；想重新生成用 make icon
 $(ICNS): Resources/AppIcon.icns
 	@mkdir -p $(BUNDLE)/Contents/Resources
 	@cp Resources/AppIcon.icns $@
 
-$(WIDGET_BUNDLE)/Contents/Info.plist: $(WIDGET_DIR)/Info.plist
+# 小组件的版本号从主 App 派生，所以只需维护一处（改 Resources/Info.plist）
+$(WIDGET_BUNDLE)/Contents/Info.plist: $(WIDGET_DIR)/Info.plist Resources/Info.plist
 	@mkdir -p $(WIDGET_BUNDLE)/Contents
-	@cp $(WIDGET_DIR)/Info.plist $@
+	@cp $< $@
+	@plutil -replace CFBundleShortVersionString -string "$(VERSION)" $@
+	@plutil -replace CFBundleVersion -string "$(BUILD)" $@
 
 ## run: 启动菜单栏 App（仅开发用；已装到 /Applications 时请改用 make install）
 run: build
