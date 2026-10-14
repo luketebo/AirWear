@@ -115,7 +115,7 @@ Sources/
 │   ├── CoreAudio.swift      CoreAudio 薄封装 + 蓝牙输出设备识别
 │   ├── WearMonitor.swift    三层信号状态机（去抖、睡眠、电量佐证）
 │   ├── BatteryProbe.swift   system_profiler 电量解析 + 放电推断
-│   ├── SessionStore.swift   区间存储（原子重写 + flock + 合并 + 统计 + CSV）
+│   ├── SessionStore.swift   SQLite 区间存储（WAL + 事务 + flock + 合并 + 统计 + CSV）
 │   ├── MenuBarView.swift    AppModel + 弹窗 UI（Swift Charts）
 │   ├── MainWindow.swift     主窗口：概览 / 历史 / 设置 三页签（Swift Charts）
 │   ├── PeriodSwipeHandler.swift  触控板横向滑动 → 切换统计时段
