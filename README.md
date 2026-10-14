@@ -49,6 +49,8 @@ make install     # 编译 → 装到 /Applications → 启动
 
 ## 用起来是什么样
 
+### 菜单栏
+
 菜单栏直接显示今日佩戴时长（如 `3h12m`）。点开弹窗能看到：
 
 - **状态**：`佩戴中 · 正在出声`（绿）/ `已连接 · 未出声`（橙）/ `未连接`（灰）
@@ -57,8 +59,21 @@ make install     # 编译 → 装到 /Applications → 启动
 - **最近 7 天**柱状图（深色 = 出声，浅色 = 电量确认的静默佩戴，虚线 = 每日目标）
 - **电量**：左右耳 + 充电盒，以及当前区间的变化（如 `左 33%→29%`）
 - **今日区间明细**，✅ 表示这一段有电量佐证
-- **设置**：只统计 AirPods / 静默是否算佩戴 / 通知开关 / 久戴阈值 / 每日目标 / 外观模式
-- **主窗口**：切换周、月、年视图，查看对应时段的佩戴趋势和历史记录；可浏览过去时段并集中管理设置
+- 底部可切换**外观**（跟随系统 / 浅色 / 深色），或**打开主窗口**
+
+### 主窗口
+
+点弹窗底部的 **「打开主窗口」**。这是菜单栏应用的唯一入口（它不占 Dock 图标）。
+里面分三个页签：
+
+| 页签 | 内容 |
+|---|---|
+| **概览** | 顶部切「周 / 月 / 年」，显示该时段的佩戴总计与趋势图（年视图按月聚合） |
+| **历史** | 该时段内逐段佩戴记录，正在进行的那段会标「进行中」 |
+| **设置** | 外观模式、只统计 AirPods、静默是否算佩戴、久戴通知、阈值与每日目标 |
+
+在概览 / 历史页，**用触控板左右滑动**可以翻到上一个或下一个时段（只能往前翻到有记录的时段，
+且不会和纵向滚动打架）。
 
 ![久戴提醒](docs/images/popover-break-reminder.png)
 
@@ -102,9 +117,11 @@ Sources/
 │   ├── BatteryProbe.swift   system_profiler 电量解析 + 放电推断
 │   ├── SessionStore.swift   区间存储（原子重写 + flock + 合并 + 统计 + CSV）
 │   ├── MenuBarView.swift    AppModel + 弹窗 UI（Swift Charts）
-│   ├── AirWearApp.swift     MenuBarExtra 入口
+│   ├── MainWindow.swift     主窗口：概览 / 历史 / 设置 三页签（Swift Charts）
+│   ├── PeriodSwipeHandler.swift  触控板横向滑动 → 切换统计时段
+│   ├── AirWearApp.swift     MenuBarExtra + Window 入口
 │   ├── CLI.swift            --dump/--watch/--today/--week/--export/--render…
-│   ├── Settings.swift       UserDefaults 偏好
+│   ├── Settings.swift       UserDefaults 偏好（含外观模式）
 │   ├── Format.swift         时长/日期格式化
 │   └── Logger.swift         日志（stdout + 文件，自动截断）
 ├── AirWearWidget/       桌面小组件扩展
