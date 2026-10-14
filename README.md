@@ -146,30 +146,27 @@ make clean
 
 ## 发版
 
-版本号的唯一来源是 `Resources/Info.plist` 的 `CFBundleShortVersionString`；
-构建号（`CFBundleVersion`）由 git 提交数自动派生 —— 两个都不用你手算。
+**版本号只在这一个地方维护**：`Resources/Info.plist` 的 `CFBundleShortVersionString`。
+`make release` 直接读它 —— 产物文件名、App 和小组件里显示的版本都由它派生。
+构建号（`CFBundleVersion`）由 git 提交数自动派生，不用你管。
 
 ```bash
-make version        # 看将要打包的版本：  AirWear 0.1.0 (build 7)
+# 1) 改 Resources/Info.plist 里的 <string>0.1.0</string> → 0.1.1
+# 2) 顺手同步文档里写死的产物文件名（README 的安装命令、docs/distribution.md）
+sed -i '' -E 's/AirWear-[0-9]+\.[0-9]+\.[0-9]+\.(zip|dmg)/AirWear-0.1.1.\1/g' README.md docs/distribution.md
 
-make bump-patch     # 0.1.0 → 0.1.1（修 bug）
-# make bump-minor   # 0.1.1 → 0.2.0（加功能）
-# make bump-major   # 0.2.1 → 1.0.0（不兼容改动）
+# 3) 确认并出包
+make version        # AirWear 0.1.1 (build N)
+make release        # dmg + zip + SHA256 + 可直接转发的安装话术
 
-make release        # 出 dmg + zip + SHA256 + 可直接转发的安装话术
+# 4) 提交、打 tag、推送
 git add -A && git commit -m "v0.1.1"
-make tag            # 按当前版本号打 tag（已存在会报错，不会静默覆盖）
+make tag            # 按 plist 里的版本号打 tag（已存在会报错，不会静默覆盖）
 git push --follow-tags
 ```
 
-`make bump-*` 会把新版本号写回 plist，并同步 README / 本文档里写死的产物文件名，
-不会出现「文档指向一个不存在的 zip」。想先看会变成什么再决定：
-
-```bash
-./scripts/bump-version.sh patch --dry-run
-```
-
-最后到 GitHub 建 Release，把 `dist/` 里两个文件传上去（命令行：`gh release create v0.1.1 dist/*.dmg dist/*.zip`）。
+最后到 GitHub 建 Release，把 `dist/` 里两个文件传上去
+（命令行：`gh release create v0.1.1 dist/*.dmg dist/*.zip --title "AirWear v0.1.1" --notes "改了什么"`）。
 
 ## 数据位置
 

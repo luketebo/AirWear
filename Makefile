@@ -67,7 +67,7 @@ else
 APP_ENTITLEMENTS :=
 endif
 
-.PHONY: all version bump-patch bump-minor bump-major tag build run stop install uninstall release dmg zip icon notarize notarize-setup verify-dmg widget-doctor dump watch today week export render render-widget widget-status log clean autostart unautostart help
+.PHONY: all version tag build run stop install uninstall release dmg zip icon notarize notarize-setup verify-dmg widget-doctor dump watch today week export render render-widget widget-status log clean autostart unautostart help
 
 all: build
 
@@ -79,17 +79,6 @@ icon:
 version:
 	@echo "  $(APP_NAME) $(VERSION) (build $(BUILD))"
 
-## bump-patch: 版本号自增（修订：0.1.0 → 0.1.1）
-bump-patch:
-	@./scripts/bump-version.sh patch
-
-## bump-minor: 版本号自增（次版本：0.1.1 → 0.2.0）
-bump-minor:
-	@./scripts/bump-version.sh minor
-
-## bump-major: 版本号自增（主版本：0.2.1 → 1.0.0）
-bump-major:
-	@./scripts/bump-version.sh major
 
 ## tag: 按当前版本号打 git tag（v$(VERSION)），重复打会报错
 tag:
